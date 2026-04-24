@@ -1,0 +1,146 @@
+{
+  "page_slug": "kb-doc/fixture-all-section-types",
+  "content": {
+    "title": "All 13 Section Types — Fixture",
+    "subtitle": "One row covering every renderer. Use in Storybook or a dev route to verify visual parity.",
+    "sections": [
+      {
+        "heading": "Markdown",
+        "type": "markdown",
+        "body": "# Heading One\n\nSome paragraph text with **bold** and _italic_ for visual weight.\n\n- bullet one\n- bullet two\n\n> Pull quote style line."
+      },
+      {
+        "heading": "Key/Value",
+        "type": "key_value",
+        "items": [
+          { "label": "Supabase project", "value": "kxnorbxohxnuljvghuif" },
+          { "label": "GitHub", "value": "erezgit/my-jarvis-dashboard-daniel" },
+          { "label": "Language", "value": "Hebrew (RTL)" }
+        ]
+      },
+      {
+        "heading": "Checklist",
+        "type": "checklist",
+        "items": [
+          { "text": "Design migration script", "done": true },
+          { "text": "Smoke-test all four modes", "done": true },
+          { "text": "Run audit against Daniel", "done": false },
+          { "text": "Run dry-run against Daniel", "done": false },
+          { "text": "Migrate to Neon", "done": false }
+        ]
+      },
+      {
+        "heading": "Table",
+        "type": "table",
+        "headers": ["Tenant", "Tables", "Rows", "Est. effort"],
+        "rows": [
+          ["Daniel", 10, 172, "3-4 days"],
+          ["Flame King", 18, 21, "3-4 days"],
+          ["OS-merged", 45, "~31,000", "10-15 days"]
+        ]
+      },
+      {
+        "heading": "Timeline",
+        "type": "timeline",
+        "items": [
+          { "date": "2026-04-24", "title": "Discovery complete", "body": "All 3 tenants audited, architectural incompatibility flagged." },
+          { "date": "2026-04-24", "title": "Scope locked to 100%", "body": "Erez directive — no cuts." },
+          { "date": "2026-04-24", "title": "Migration engine generalized", "body": "Manifest-driven, 5/5 smoke tests pass." }
+        ]
+      },
+      {
+        "heading": "Contacts",
+        "type": "contacts",
+        "items": [
+          { "name": "Daniel", "role": "Tenant owner", "email": "daniel@example.com" },
+          { "name": "Erez Flameking", "role": "Tenant owner", "email": "erezflameking@myjarvis.io" },
+          { "name": "Yogev", "role": "Tenant user", "email": "yogev@myjarvis.io", "phone": "+972-50-xxx" }
+        ]
+      },
+      {
+        "heading": "Decisions",
+        "type": "decisions",
+        "items": [
+          {
+            "q": "Should we fold paamon_* tables into a generic action_items?",
+            "decision": "No — preserve domain semantics.",
+            "rationale": "Collapsing loses meaning; template accepts per-tenant custom tables as a feature."
+          },
+          {
+            "q": "Phase C full port vs minimal viable?",
+            "decision": "Full port — 100% migration, no cuts.",
+            "rationale": "Preserves Erez's OS entirely; meeting transcripts + naming + everything."
+          }
+        ]
+      },
+      {
+        "heading": "Action items",
+        "type": "action_items",
+        "items": [
+          { "text": "Get Daniel Supabase direct-connect URL", "status": "in_progress" },
+          { "text": "Align with Atlas on useAuth() shim", "status": "in_progress" },
+          { "text": "Run --audit against Daniel", "status": "todo" },
+          { "text": "Ship KB renderer components", "status": "done" }
+        ]
+      },
+      {
+        "heading": "Open questions",
+        "type": "open_questions",
+        "items": [
+          "Do the paamon_* custom tables need per-column transforms, or just 1:1 copy?",
+          "When does Atlas's template land?",
+          "Should the KB renderer support inline editing in phase 1, or stay read-only until phase 2?"
+        ]
+      },
+      {
+        "heading": "KPIs",
+        "type": "kpi_cards",
+        "items": [
+          { "label": "Rows to migrate", "value": "31,555", "trend": "flat" },
+          { "label": "Tables across 3 tenants", "value": "73" },
+          { "label": "Page components (Daniel)", "value": "23", "trend": "up" },
+          { "label": "Phase A ETA", "value": "3-4d", "trend": "flat" }
+        ]
+      },
+      {
+        "heading": "Deep dives",
+        "type": "deep_dives",
+        "items": [
+          {
+            "title": "Why TRUNCATE before INSERT?",
+            "body": "Idempotency. New tenants land with zero rows post-provisioning. TRUNCATE makes the migration re-runnable without accumulating duplicates. The pre-flight --force check prevents accidental wipes."
+          },
+          {
+            "title": "Why manifest-driven instead of tenant-specific scripts?",
+            "body": "We have 3 tenants today and probably more later. One engine + N JSON manifests means every safety improvement (transactional inserts, chunked batches, etc.) applies everywhere automatically. Per-column transforms plug into the same shape."
+          }
+        ]
+      },
+      {
+        "heading": "Debates",
+        "type": "debates",
+        "items": [
+          {
+            "position": "Build KB renderer in Daniel first, hoist to template later",
+            "for": "Smaller blast radius for mistakes. Atlas doesn't block us.",
+            "against": "Risk of template drift if we ship to Daniel before Atlas's template exists."
+          }
+        ]
+      },
+      {
+        "heading": "Transcript",
+        "type": "transcript",
+        "speakers": [
+          { "name": "Erez", "line": "For Daniel, for the OS, for Flame King, all the oldest structured pages need to come into the new dashboard structure. 100% needs to be migrated." },
+          { "name": "Jarvis", "line": "Binding directive — no Option 2/3 trimming. Full port." },
+          { "name": "Noa", "line": "Ack. Revising timeline. OS-merged back to 2-3 weeks honest estimate." }
+        ]
+      },
+      {
+        "heading": "Unknown type (renderer safety demo)",
+        "type": "some_future_type",
+        "items": ["this", "will", "render", "as", "a", "warning", "card"]
+      }
+    ]
+  }
+}
