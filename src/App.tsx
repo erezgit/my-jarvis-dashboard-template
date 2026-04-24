@@ -1,8 +1,22 @@
 import { AuthKitProvider, useAuth } from "@workos-inc/authkit-react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HashRouter } from "react-router-dom";
 import { CRM } from "./components/atomic-crm/root/CRM";
 import { VoiceChannelProvider } from "./components/voice/VoiceChannelProvider";
 import { AutoplayManager } from "./components/voice/AutoplayManager";
+
+// One shared QueryClient per session. Used by the data hooks
+// (src/components/data/*) and the KB renderer (src/components/kb/*).
+// staleTime 30s matches hook defaults; refetchOnWindowFocus off avoids noisy
+// reloads on tab-switch during long sessions.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const workosClientId = import.meta.env.VITE_WORKOS_CLIENT_ID as string | undefined;
 
@@ -72,7 +86,9 @@ const App = () => (
     devMode
     onRefreshFailure={({ signIn }) => signIn()}
   >
-    <AuthGate />
+    <QueryClientProvider client={queryClient}>
+      <AuthGate />
+    </QueryClientProvider>
   </AuthKitProvider>
 );
 
