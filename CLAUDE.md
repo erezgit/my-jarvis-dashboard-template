@@ -1,51 +1,62 @@
-# MyJarvis OS
+# MyJarvis Dashboard — Template
 
-At session start, read the OS Guide from the Knowledge Base:
+This is the **canonical template** for per-tenant MyJarvis dashboards. Every tenant's dashboard is a fork of this repo (via the Provisioning Worker) with tenant-specific placeholders substituted.
 
-```sql
-SELECT content FROM page_content WHERE page_slug = 'kb-doc/os-guide';
+## Placeholders
+
+Before this repo becomes a running dashboard, these placeholders must be substituted. The Provisioning Worker (`erezgit/my-jarvis-provisioning`) does this automatically on tenant creation. For manual setups, run the substitution yourself.
+
+| Placeholder | Example | Filled by |
+|---|---|---|
+| `__TENANT__` | `lilach`, `daniel`, `yogev` | Provisioning Worker at fork time (step 3: github-substitute-placeholders) |
+| `__VOICE_PUBLIC_URL__` | `https://pub-abc123.r2.dev` | Provisioning Worker after R2 bucket create (step 6) |
+
+Two more values are CF Pages secrets, NOT committed:
+
+| Secret | Purpose |
+|---|---|
+| `TENANT_OWNER_USER_ID` | WorkOS `user.id` — enforced in every `/api/*` handler so only the owner can use their dashboard |
+| `DATABASE_URL` | Neon pooled connection string for this tenant's own DB |
+| `WORKOS_CLIENT_SECRET` | WorkOS backend secret (shared across tenants) |
+| `OPENAI_API_KEY` | OpenAI Bearer for TTS (shared across tenants) |
+| `VOICE_API_KEY` | Shared bearer the MCP Worker uses to authenticate POST `/api/voice` |
+
+Files touched by placeholder substitution:
+- `package.json` — `name`, deploy script `--project-name`
+- `wrangler.toml` — `name`, `VOICE_PUBLIC_URL`, R2 `bucket_name`
+- `scripts/smoke.mjs` — `BASE` URL
+
+Manual substitution recipe:
+```bash
+sed -i '' 's/__TENANT__/<slug>/g' package.json wrangler.toml scripts/smoke.mjs
+sed -i '' "s|__VOICE_PUBLIC_URL__|$VOICE_PUBLIC_URL|g" wrangler.toml
 ```
 
-This is the complete guide for developing on MyJarvis OS — architecture, page types, section data shapes, coding standards, database patterns, and safety rules.
+After substitution, `grep -rn __TENANT__ .` should return zero hits.
 
-Use the Supabase MCP to run this query. The result is a JSON object with title, subtitle, and sections array. Read each section to understand the system before making changes.
+## Stack
 
-## Quick Reference
+- **Frontend:** React 19 + Vite + Tailwind + shadcn
+- **Backend:** Cloudflare Pages Functions (in `functions/`)
+- **DB:** Neon Postgres (per-tenant project)
+- **Auth:** WorkOS AuthKit — single shared MyJarvis org, tenant ownership enforced via `TENANT_OWNER_USER_ID` secret at every `/api/*` handler
+- **Voice:** shared `my-jarvis-voice-channel` Worker with per-tenant Durable Object instances; R2 per tenant
 
-- **Supabase project:** xtkfuchjmeekofeuplfu
-- **GitHub:** https://github.com/erezgit/my-jarvis-os.git
-- **Live site:** https://my-jarvis-os.vercel.app
-- **Two page types:** Structure Pages (custom TSX) + Content Pages (kb-doc/* sections in page_content)
-- **13 section types:** decisions, action_items, timeline, debates, deep_dives, open_questions, contacts, key_value, markdown, table, checklist, kpi_cards, transcript
+## Consolidated voice-channel Worker
 
-## Sidebar Philosophy
+The `VoiceChannel` Durable Object class lives in a separate repo (`my-jarvis-voice-channel`) — **one shared Worker across all tenants**, per-tenant DO instances keyed by `__TENANT__`. This template does NOT ship a `workers/voice-channel/` directory. `wrangler.toml`'s `[[durable_objects.bindings]]` points at the shared Worker via `script_name = "my-jarvis-voice-channel"`.
 
-**The sidebar is the Kanban board.** It shows what matters right now — not everything that exists.
+Deploying a bad change to the voice-channel Worker affects every tenant — use caution. Revisit per-tenant workers after ~10 tenants if blast radius becomes an issue.
 
-### Tiers (top to bottom)
+## Pre-push gate
 
-1. **Golden Image** — Pages Erez + Yaron both reviewed and agreed on. Represents the business. Nobody adds or removes without both signing off.
-2. **Yaron's Area** — Up to 6 pages. Yaron's active workstreams.
-3. **Erez's Area** — Up to 6 pages. Erez's active workstreams.
-4. **Project Sections** — Side projects (e.g., MyJarvis Voice under Erez). Each person can create project sections under their area.
-5. **Knowledge Base** — Always the last entry. The archive. When a page is done and no longer actively worked on, move it here.
+Every change must pass before push (CF Pages auto-deploys `main`; a failed deploy = user-facing outage):
 
-### Rules
+```
+npm run typecheck && npm run lint && npm run build
+```
 
-- **Max 6 pages per person** in their area. If you need a 7th, move something to the Knowledge Base first.
-- **Sidebar = what we're working on NOW.** If it's not active, it doesn't belong in the sidebar.
-- **Knowledge Base is the filing cabinet.** Done pages, reference docs, old tickets — they all live there. Searchable, browsable, but out of the way.
-- **Don't add pages to the sidebar without asking.** Always confirm with the user before adding a new sidebar entry. The sidebar is sacred.
+## Known debt
 
-### Adding a page to the sidebar
-
-Follow the three-file recipe:
-1. Create the TSX component with `(Component as any).path = "/route"`
-2. Register the route in `CRM.tsx`
-3. Add to the correct array in `CrmSidebar.tsx`: `sharedItems` (golden image), `yaronItems`, `erezItems`, or a project section
-
-### Moving a page to Knowledge Base
-
-1. Remove from the sidebar array in `CrmSidebar.tsx`
-2. Keep the route in `CRM.tsx` (pages remain accessible by URL)
-3. The KB list page at `/knowledge-base` shows all `page_content` entries automatically
+- `scripts/smoke.mjs` still imports `@clerk/backend` from the Clerk era. The dashboard runs on WorkOS AuthKit now. Smoke is broken until it's ported to WorkOS user-management. Do not rely on `npm run smoke` yet.
+- Inline Atomic-CRM content (upstream `README.md` boilerplate, `ErezTestTwoPage`, sidebar labels, seed page text) is intentionally left as-is — tenants customize after fork. The template's job is infrastructure, not content.

@@ -26,16 +26,24 @@ VOICE_PUBLIC_URL = "__VOICE_PUBLIC_URL__"
 binding = "VOICE_BUCKET"
 bucket_name = "my-jarvis-dashboard-__TENANT__-voice"
 
-# Durable Object namespace binding. The DO *class* (VoiceChannel) lives in a
-# sibling Worker (script name below). The Provisioning Worker publishes that
-# Worker via the CF Workers Script API from `workers/voice-channel/index.ts`
-# BEFORE the Pages project is created, so `script_name` resolves on first deploy.
+# Durable Object namespace binding. The DO *class* (VoiceChannel) lives in the
+# consolidated `my-jarvis-voice-channel` Worker — one shared Worker across all
+# tenants, per-tenant DO instances keyed by `__TENANT__`. The shared Worker is
+# deployed once and referenced here via `script_name`; the template does NOT
+# ship a `workers/voice-channel/` directory any more (it previously did, but
+# the per-tenant Worker pattern was retired in favor of a single binary with
+# tenant-scoped DO IDs).
+#
+# To address this tenant's DO from Pages Functions:
+#   env.VOICE_CHANNEL.get(env.VOICE_CHANNEL.idFromName("__TENANT__"))
 [[durable_objects.bindings]]
 name = "VOICE_CHANNEL"
 class_name = "VoiceChannel"
-script_name = "my-jarvis-dashboard-__TENANT__-voice-channel"
+script_name = "my-jarvis-voice-channel"
 
 # Secrets (set via `wrangler pages secret put <NAME> --project-name my-jarvis-dashboard-__TENANT__`):
-#   DATABASE_URL     — Neon pooled connection string
-#   OPENAI_API_KEY   — OpenAI Bearer for TTS (shared with my-jarvis-voice today)
-#   VOICE_API_KEY    — Shared bearer the MCP Worker uses to authenticate POST /api/voice
+#   DATABASE_URL           — Neon pooled connection string (this tenant's own DB)
+#   WORKOS_CLIENT_SECRET   — WorkOS backend secret (shared across tenants)
+#   TENANT_OWNER_USER_ID   — The single WorkOS user.id allowed to use this tenant
+#   OPENAI_API_KEY         — OpenAI Bearer for TTS (shared across tenants)
+#   VOICE_API_KEY          — Shared bearer the MCP Worker uses to authenticate POST /api/voice
