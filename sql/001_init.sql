@@ -1,96 +1,74 @@
--- Lilach dashboard — initial schema
--- Applied via: psql "$NEON_DATABASE_URL" -f sql/001_init.sql
+-- MyJarvis dashboard — platform-universal initial schema.
+-- Applied by the Provisioning Worker at step 10 (apply_tenant_schema) against
+-- the freshly-created Neon project for every new tenant. For manual setup:
+--   psql "$NEON_DATABASE_URL" -f sql/001_init.sql
 -- Idempotent: safe to re-run.
+--
+-- WHAT LIVES HERE (and nowhere else): ONLY tables every MyJarvis dashboard
+-- needs — never tenant-specific content shapes (clients, sessions, methodology,
+-- products, etc.). Those belong in `sql/tenant/<slug>.sql` under the tenant's
+-- OWN repo, applied alongside the tenant's data migration (Ship 5 pattern).
+-- If a table is here, it must be needed by the voice stack, the KB renderer,
+-- or the settings layer — the three platform-universal pillars.
+--
+-- WHY `user_id TEXT`: WorkOS subjects have the format `user_01XXX...`, not
+-- UUIDs. A UUID column here silently breaks every row-insert from the Pages
+-- Functions. We learned this the Daniel way (Noa caught it in migration).
+-- Template-level rule: any user-keyed column is TEXT, not UUID. PKs + FKs
+-- between platform tables stay UUID.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- ── clients ──────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS clients (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        TEXT        NOT NULL,
-  phone       TEXT,
-  email       TEXT,
-  notes       TEXT,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+-- ── user_settings ──────────────────────────────────────────────────────
+-- Per-user settings blob. Readers: GET /api/settings. Writers: PATCH /api/settings
+-- (upsert via `data || EXCLUDED.data`). Tenant owners keep their UI prefs here;
+-- nothing-is-sensitive so a simple JSONB blob suffices.
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id     TEXT        PRIMARY KEY,
+  data        JSONB       NOT NULL DEFAULT '{}'::jsonb,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS clients_created_at_idx ON clients (created_at DESC);
-
--- ── sessions ─────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS sessions (
-  id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id     UUID        NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  scheduled_at  TIMESTAMPTZ NOT NULL,
-  summary       TEXT,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- ── voice_samples ──────────────────────────────────────────────────────
+-- One row per agent-voice message delivered to the user. Readers:
+-- GET /api/voice/feed. Writers: POST /api/voice (with audio uploaded to
+-- R2 first, URL stored here). The per-tenant R2 bucket holds the MP3s;
+-- this table is the metadata index + feed source.
+CREATE TABLE IF NOT EXISTS voice_samples (
+  id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           TEXT        NOT NULL,
+  agent_name        TEXT        NOT NULL,
+  text_content      TEXT        NOT NULL,
+  audio_url         TEXT        NOT NULL,
+  title             TEXT,
+  duration_seconds  INT,
+  category          TEXT        NOT NULL DEFAULT 'message',
+  voice_id          TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS voice_samples_user_created_idx
+  ON voice_samples (user_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS sessions_client_idx     ON sessions (client_id);
-CREATE INDEX IF NOT EXISTS sessions_scheduled_idx  ON sessions (scheduled_at DESC);
-
--- ── work_plans ───────────────────────────────────────────────────────
--- Each client has one or more active work plans (the thing she's coaching toward).
-CREATE TABLE IF NOT EXISTS work_plans (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id   UUID        NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  title       TEXT        NOT NULL,
-  status      TEXT        NOT NULL DEFAULT 'active',  -- active | archived | done
-  content     JSONB       NOT NULL DEFAULT '{}'::jsonb,
+-- ── page_content ───────────────────────────────────────────────────────
+-- KB + knowledge-base source table. Readers: src/components/kb/* via
+-- GET /api/kb/:slug and GET /api/kb. Writers: migration scripts (Ship 5)
+-- and eventual inline-editing hooks. `content` is a PageContent JSONB
+-- with a `title` + `sections[]` shape; each section is one of 13 typed
+-- variants + an unknown fallback (see src/components/kb/types.ts).
+CREATE TABLE IF NOT EXISTS page_content (
+  id          SERIAL      PRIMARY KEY,
+  page_slug   TEXT        NOT NULL UNIQUE,
+  content     JSONB       NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS page_content_updated_idx
+  ON page_content (updated_at DESC);
 
-CREATE INDEX IF NOT EXISTS work_plans_client_idx ON work_plans (client_id);
-
--- ── coach_reflections ────────────────────────────────────────────────
--- Lilach's private coach-side reflections, per session or free-standing.
-CREATE TABLE IF NOT EXISTS coach_reflections (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id  UUID        REFERENCES sessions(id) ON DELETE SET NULL,
-  client_id   UUID        REFERENCES clients(id)  ON DELETE SET NULL,
-  body        TEXT        NOT NULL,
-  tags        TEXT[]      NOT NULL DEFAULT '{}',
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS coach_reflections_session_idx ON coach_reflections (session_id);
-CREATE INDEX IF NOT EXISTS coach_reflections_client_idx  ON coach_reflections (client_id);
-
--- ── methodology_cards ────────────────────────────────────────────────
--- The cards that make up Lilach's method — reusable across clients.
-CREATE TABLE IF NOT EXISTS methodology_cards (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  title       TEXT        NOT NULL,
-  kind        TEXT        NOT NULL DEFAULT 'principle', -- principle | exercise | metaphor | story
-  body        TEXT,
-  tags        TEXT[]      NOT NULL DEFAULT '{}',
-  source_path TEXT,                                -- original markdown path, if imported
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS methodology_cards_kind_idx ON methodology_cards (kind);
-
--- ── content_items ────────────────────────────────────────────────────
--- Drafts, posts, carousels — anything that goes out the door.
-CREATE TABLE IF NOT EXISTS content_items (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  title       TEXT,
-  kind        TEXT        NOT NULL DEFAULT 'draft',   -- draft | instagram_post | carousel | newsletter
-  status      TEXT        NOT NULL DEFAULT 'draft',   -- draft | scheduled | published | archived
-  body        TEXT,
-  media       JSONB       NOT NULL DEFAULT '[]'::jsonb,
-  scheduled_at TIMESTAMPTZ,
-  published_at TIMESTAMPTZ,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS content_items_status_idx ON content_items (status);
-
--- ── updated_at auto-bump (simple trigger for tables that have it) ────
+-- ── updated_at auto-bump ───────────────────────────────────────────────
+-- Simple trigger applied to every table that has an updated_at column.
+-- Loop covers all three platform tables; tenant-specific tables loop
+-- themselves at the bottom of `sql/tenant/<slug>.sql` when they need it.
 CREATE OR REPLACE FUNCTION touch_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
@@ -103,7 +81,7 @@ DO $$
 DECLARE
   t TEXT;
 BEGIN
-  FOR t IN SELECT unnest(ARRAY['clients', 'sessions', 'work_plans', 'methodology_cards', 'content_items']) LOOP
+  FOR t IN SELECT unnest(ARRAY['user_settings', 'page_content']) LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS %I_touch_updated_at ON %I;',
       t, t
