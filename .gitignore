@@ -1,0 +1,26 @@
+# deps
+node_modules
+.pnp
+.pnp.js
+.pnp.loader.mjs
+
+# build
+dist
+dist-ssr
+*.local
+
+# wrangler
+.wrangler
+.dev.vars
+
+# editor / os
+.vscode/*
+!.vscode/settings.json
+.idea
+.DS_Store
+*.log
+
+# smoke / playwright artifacts
+.playwright-mcp
+*.playwright
+lilach-*.png
