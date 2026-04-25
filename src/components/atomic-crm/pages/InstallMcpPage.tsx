@@ -131,7 +131,7 @@ export function InstallMcpPage() {
             lineHeight: 1.55,
             color: T.ink2,
             marginTop: 18,
-            maxWidth: 64,
+            maxWidth: "64ch",
           }}
         >
           Paste one snippet into your Claude Desktop config, restart the app, and your
