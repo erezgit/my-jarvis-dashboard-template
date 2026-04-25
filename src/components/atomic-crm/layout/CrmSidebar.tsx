@@ -1,5 +1,5 @@
 import { Link, matchPath, useLocation } from "react-router-dom";
-import { LayoutDashboard, LogOut, Home } from "lucide-react";
+import { LayoutDashboard, LogOut, Home, Plug } from "lucide-react";
 import { useAuth } from "@workos-inc/authkit-react";
 import { cn } from "@/lib/utils";
 import { getTenantIdentity } from "@/lib/tenant";
@@ -17,10 +17,11 @@ type NavItem = {
   icon: typeof LayoutDashboard;
 };
 
-// Template default nav — just the welcome page. Tenant assistants append
+// Template default nav — Welcome + Install MCP. Tenant assistants append
 // their own pages here as they build them.
 const navItems: NavItem[] = [
   { label: "Welcome", to: "/", icon: Home },
+  { label: "Install MCP", to: "/install-mcp", icon: Plug },
 ];
 
 function NavLink({ item }: { item: NavItem }) {
