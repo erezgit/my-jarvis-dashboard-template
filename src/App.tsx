@@ -1,11 +1,12 @@
 import { useEffect } from "react";
 import { AuthKitProvider, useAuth } from "@workos-inc/authkit-react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { HashRouter } from "react-router-dom";
 import { CRM } from "./components/atomic-crm/root/CRM";
 import { VoiceChannelProvider } from "./components/voice/VoiceChannelProvider";
 import { AutoplayManager } from "./components/voice/AutoplayManager";
 import { getTenantIdentity } from "./lib/tenant";
+import { useApi } from "./lib/api";
 
 // One shared QueryClient per session. Used by the data hooks
 // (src/components/data/*) and the KB renderer (src/components/kb/*).
@@ -73,6 +74,88 @@ function AuthGate() {
             className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
           >
             Sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // User is signed in — now check that they have access to THIS tenant.
+  return <TenantAccessGate tenantDisplayName={tenantDisplayName} />;
+}
+
+/**
+ * Gates the dashboard on a live admin-db check. Every sign-in hits
+ * /api/me/access once (cached 60s by react-query). 403 → deny screen;
+ * network/500 → retry with exponential backoff; 200 → render the dashboard.
+ *
+ * Why server-side + runtime-checked (not a Vercel-style build-time env
+ * check): tenants' membership can change (admin grants, owner transfer,
+ * revocation). A client-side constant would need a redeploy per change.
+ */
+function TenantAccessGate({ tenantDisplayName }: { tenantDisplayName: string }) {
+  const api = useApi();
+  const { signOut } = useAuth();
+
+  const { data, isLoading, error } = useQuery<{ access: boolean; role?: string }>({
+    queryKey: ["me", "access"],
+    queryFn: async () => {
+      const res = await api("/api/me/access");
+      if (res.status === 403) {
+        return { access: false };
+      }
+      if (!res.ok) {
+        throw new Error(`/api/me/access → ${res.status}`);
+      }
+      return (await res.json()) as { access: boolean; role?: string };
+    },
+    staleTime: 60_000,
+    retry: 2,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-svh items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground">Checking access…</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-svh items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4 rounded-xl border bg-card px-8 py-10 shadow-sm max-w-md">
+          <h1 className="text-lg font-semibold">Couldn't verify access</h1>
+          <p className="text-center text-sm text-muted-foreground">
+            Network or server error while checking your access to {tenantDisplayName}. Please retry.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data?.access) {
+    return (
+      <div className="flex min-h-svh items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4 rounded-xl border bg-card px-8 py-10 shadow-sm max-w-md">
+          <h1 className="text-lg font-semibold">No access to {tenantDisplayName}</h1>
+          <p className="text-center text-sm text-muted-foreground">
+            You're signed in, but this account isn't a member of {tenantDisplayName}'s dashboard. Ask the
+            owner to invite you, or sign in with a different account.
+          </p>
+          <button
+            type="button"
+            onClick={() => signOut()}
+            className="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            Sign out
           </button>
         </div>
       </div>
