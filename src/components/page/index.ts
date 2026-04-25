@@ -6,9 +6,3 @@ export {
 } from "./SectionCard";
 export { Callout, type CalloutProps, type CalloutTone } from "./Callout";
 export { BodyText, type BodyTextProps } from "./BodyText";
-export { cleanMarkdownBody, initials } from "./markdown-utils";
-export {
-  GuideMarkdown,
-  MarkdownChunk,
-  type GuideMarkdownProps,
-} from "./GuideMarkdown";

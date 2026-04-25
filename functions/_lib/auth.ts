@@ -3,11 +3,13 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 export interface Env {
   DATABASE_URL: string;
   WORKOS_CLIENT_ID: string;
+  TENANT_WORKOS_ORG_ID: string;
 }
 
 export type AuthedUser = {
   userId: string;
   sessionId: string | null;
+  orgId: string;
 };
 
 // JWKS is created lazily per Pages Function isolate and caches keys.
@@ -26,10 +28,16 @@ function getJwks(env: Env) {
 }
 
 /**
- * Verifies the incoming WorkOS-issued access token from `Authorization: Bearer <token>`.
- * Uses JWKS fetched lazily from WorkOS; `jose` handles caching + key rotation.
+ * Verifies the incoming WorkOS-issued access token AND that it was issued for
+ * THIS tenant's organization (canonical multi-tenant pattern per WorkOS docs).
  *
- * Returns { userId } on success, throws Response(401) on failure.
+ *   1. JWT signature verified against WorkOS JWKS.
+ *   2. JWT `org_id` claim must equal `env.TENANT_WORKOS_ORG_ID`.
+ *
+ * Step 2 is the access control. If a user is signed in to a different org's
+ * dashboard, their token's `org_id` won't match and we return 401.
+ *
+ * Returns { userId, sessionId, orgId } on success, throws Response(401) on failure.
  */
 export async function requireUser(
   request: Request,
@@ -45,6 +53,9 @@ export async function requireUser(
   if (!env.WORKOS_CLIENT_ID) {
     throw unauthorized("server misconfigured: WORKOS_CLIENT_ID not set");
   }
+  if (!env.TENANT_WORKOS_ORG_ID) {
+    throw unauthorized("server misconfigured: TENANT_WORKOS_ORG_ID not set");
+  }
 
   try {
     const { payload } = await jwtVerify(token, getJwks(env), {
@@ -54,9 +65,22 @@ export async function requireUser(
     const userId = (payload.sub ?? "") as string;
     if (!userId) throw unauthorized("token missing sub");
 
+    const orgId = (payload.org_id ?? "") as string;
+    if (!orgId) {
+      throw unauthorized(
+        "token missing org_id claim — sign-in must pass organizationId",
+      );
+    }
+    if (orgId !== env.TENANT_WORKOS_ORG_ID) {
+      throw unauthorized(
+        `token org_id mismatch: expected ${env.TENANT_WORKOS_ORG_ID}, got ${orgId}`,
+      );
+    }
+
     return {
       userId,
       sessionId: (payload.sid ?? null) as string | null,
+      orgId,
     };
   } catch (err) {
     if (err instanceof Response) throw err;
