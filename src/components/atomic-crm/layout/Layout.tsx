@@ -8,7 +8,7 @@ import { VoicePanel, VoicePanelToggle } from "@/components/voice/VoicePanel";
 // trigger only renders when the panel is closed; the panel's own close
 // button handles the other direction.
 export const Layout = ({ children }: { children: ReactNode }) => {
-  const [voicePanelOpen, setVoicePanelOpen] = useState(false);
+  const [voicePanelOpen, setVoicePanelOpen] = useState(true);
   return (
     <div className="flex h-svh">
       <CrmSidebar />
