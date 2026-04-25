@@ -16,6 +16,14 @@ const TEMPLATE_FALLBACK: TenantIdentity = {
   initial: "M",
 };
 
+// Override the auto-derived "Title Case from kebab-case" displayName for slugs
+// where the natural casing isn't right (acronyms, multi-word names without a
+// dash in the URL, etc).
+const DISPLAY_NAME_OVERRIDES: Record<string, string> = {
+  os: "OS",
+  flameking: "Flame King",
+};
+
 export function getTenantIdentity(): TenantIdentity {
   if (typeof window === "undefined") return TEMPLATE_FALLBACK;
 
@@ -27,10 +35,12 @@ export function getTenantIdentity(): TenantIdentity {
   if (!match) return TEMPLATE_FALLBACK;
 
   const slug = match[1].toLowerCase();
-  const displayName = slug
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  const displayName =
+    DISPLAY_NAME_OVERRIDES[slug] ??
+    slug
+      .split("-")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
   const initial = displayName.charAt(0).toUpperCase();
 
   return { slug, displayName, initial };

@@ -171,6 +171,12 @@ export function VoiceChannelProvider({ children }: { children: ReactNode }) {
                   // Isolate listener failures from the others.
                 }
               });
+            } else if (frame && frame.type === "deploy") {
+              // New deployment broadcast. Reload immediately — voice samples
+              // are persisted in the feed so anything mid-playback can be
+              // replayed after reload. This is the fast path; useVersionPoll
+              // is the fallback for tabs that lost the WS.
+              window.location.reload();
             }
           } catch {
             // Non-JSON or unknown frame — drop.

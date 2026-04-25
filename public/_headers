@@ -1,0 +1,23 @@
+# Cache contract for SPA auto-refresh.
+#
+# index.html — never cache; revalidate every navigation. Pages auto-sets ETag
+# so this is a 304 round-trip when nothing changed, full refresh after deploy.
+#
+# version.json / api/version — never cache. Polling endpoint MUST be live or
+# the auto-refresh fallback breaks silently.
+#
+# /assets/* — immutable forever. Hashed filenames are the cache key; if a
+# bundle changes, the URL changes. Skip even the conditional revalidation
+# the browser would otherwise do on hard reload.
+
+/index.html
+  Cache-Control: no-cache
+
+/version.json
+  Cache-Control: no-store
+
+/api/version
+  Cache-Control: no-store
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
