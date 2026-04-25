@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { AuthKitProvider, useAuth } from "@workos-inc/authkit-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HashRouter } from "react-router-dom";
 import { CRM } from "./components/atomic-crm/root/CRM";
 import { VoiceChannelProvider } from "./components/voice/VoiceChannelProvider";
 import { AutoplayManager } from "./components/voice/AutoplayManager";
+import { getTenantIdentity } from "./lib/tenant";
 
 // One shared QueryClient per session. Used by the data hooks
 // (src/components/data/*) and the KB renderer (src/components/kb/*).
@@ -39,6 +41,13 @@ if (!workosClientId) {
 // right-sized trade-off — no shared blast radius, no BFF overhead to maintain.
 function AuthGate() {
   const { isLoading, user, signIn } = useAuth();
+  const { displayName: tenantDisplayName } = getTenantIdentity();
+
+  // Set the document title once we know the tenant. Replaces the static
+  // index.html title ("MyJarvis Dashboard") with "<Tenant> Dashboard".
+  useEffect(() => {
+    document.title = `${tenantDisplayName} Dashboard`;
+  }, [tenantDisplayName]);
 
   if (isLoading) {
     return (
@@ -52,9 +61,11 @@ function AuthGate() {
     return (
       <div className="flex min-h-svh items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4 rounded-xl border bg-card px-8 py-10 shadow-sm">
-          <h1 className="text-lg font-semibold">Welcome</h1>
+          <h1 className="text-lg font-semibold">
+            Welcome to {tenantDisplayName}
+          </h1>
           <p className="max-w-xs text-center text-sm text-muted-foreground">
-            Sign in with your Google account via WorkOS.
+            Sign in to access your dashboard.
           </p>
           <button
             type="button"
