@@ -1,13 +1,8 @@
 import { Link, matchPath, useLocation } from "react-router-dom";
-import {
-  LayoutDashboard,
-  LogOut,
-  FlaskConical,
-  Beaker,
-  Network,
-} from "lucide-react";
+import { LayoutDashboard, LogOut, Home } from "lucide-react";
 import { useAuth } from "@workos-inc/authkit-react";
 import { cn } from "@/lib/utils";
+import { getTenantIdentity } from "@/lib/tenant";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,10 +17,10 @@ type NavItem = {
   icon: typeof LayoutDashboard;
 };
 
+// Template default nav — just the welcome page. Tenant assistants append
+// their own pages here as they build them.
 const navItems: NavItem[] = [
-  { label: "Test Page 01", to: "/test-page-01", icon: FlaskConical },
-  { label: "Erez Test Two", to: "/erez-test-two", icon: Beaker },
-  { label: "Platform Architecture", to: "/platform-architecture", icon: Network },
+  { label: "Welcome", to: "/", icon: Home },
 ];
 
 function NavLink({ item }: { item: NavItem }) {
@@ -53,6 +48,8 @@ function NavLink({ item }: { item: NavItem }) {
 
 export function CrmSidebar() {
   const { user, signOut } = useAuth();
+  const { displayName: tenantDisplayName, initial: tenantInitial } =
+    getTenantIdentity();
 
   const fullName = [user?.firstName, user?.lastName]
     .filter((v): v is string => Boolean(v))
@@ -66,9 +63,11 @@ export function CrmSidebar() {
       <div className="flex items-center gap-2 px-4 py-4">
         <Link to="/" className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-semibold">
-            E
+            {tenantInitial}
           </div>
-          <span className="text-sm font-semibold">Erez Dashboard</span>
+          <span className="text-sm font-semibold">
+            {tenantDisplayName} Dashboard
+          </span>
         </Link>
       </div>
 
