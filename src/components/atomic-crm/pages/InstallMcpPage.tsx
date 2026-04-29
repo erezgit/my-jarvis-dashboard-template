@@ -33,6 +33,13 @@ const CONFIG_SNIPPET = `{
   }
 }`;
 
+const SKILL_URL =
+  "https://raw.githubusercontent.com/erezgit/my-jarvis-dashboard-template/main/.claude/skills/myjarvis-dashboard/SKILL.md";
+
+const SKILL_INSTALL_COMMAND = `Fetch this URL and save it as a Claude skill at ~/.claude/skills/myjarvis-dashboard/SKILL.md:
+
+${SKILL_URL}`;
+
 const STEPS = [
   {
     n: "01",
@@ -89,12 +96,23 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 export function InstallMcpPage() {
   const { displayName } = getTenantIdentity();
   const [copied, setCopied] = useState(false);
+  const [skillCopied, setSkillCopied] = useState(false);
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(CONFIG_SNIPPET);
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSkillCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(SKILL_INSTALL_COMMAND);
+      setSkillCopied(true);
+      setTimeout(() => setSkillCopied(false), 1800);
     } catch {
       // ignore
     }
@@ -293,6 +311,105 @@ export function InstallMcpPage() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Skill install */}
+        <div style={{ marginTop: 56 }}>
+          <Eyebrow>Then teach Claude your dashboard</Eyebrow>
+          <h2
+            style={{
+              fontSize: 26,
+              fontWeight: 600,
+              letterSpacing: "-0.02em",
+              margin: 0,
+              marginBottom: 14,
+            }}
+          >
+            One more paste — install the dashboard skill.
+          </h2>
+          <p
+            style={{
+              fontSize: 15.5,
+              lineHeight: 1.6,
+              color: T.ink2,
+              maxWidth: "64ch",
+              margin: 0,
+              marginBottom: 22,
+            }}
+          >
+            The MCP gives Claude the tools. The skill gives Claude the playbook —
+            where pages live, how the database is shaped, when to ship a redeploy
+            vs. write a row. Paste the snippet below to your Claude. It'll fetch
+            the skill from GitHub and save it locally; from then on, every Claude
+            session you start knows how to update <em>your</em> dashboard.
+          </p>
+
+          <div
+            style={{
+              background: T.codeBg,
+              border: `1px solid ${T.line}`,
+              borderRadius: 12,
+              position: "relative",
+            }}
+          >
+            <button
+              type="button"
+              onClick={handleSkillCopy}
+              style={{
+                position: "absolute",
+                top: 12,
+                right: 12,
+                padding: "6px 14px",
+                background: skillCopied ? T.accent : T.peachDark,
+                color: T.white,
+                border: 0,
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 600,
+                fontFamily: FONT,
+                cursor: "pointer",
+                transition: "background 0.15s",
+              }}
+            >
+              {skillCopied ? "Copied!" : "Copy"}
+            </button>
+            <pre
+              style={{
+                margin: 0,
+                padding: "20px 24px",
+                paddingRight: 88,
+                fontFamily: MONO,
+                fontSize: 13,
+                color: T.code,
+                lineHeight: 1.55,
+                overflowX: "auto",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-all",
+              }}
+            >
+              <code>{SKILL_INSTALL_COMMAND}</code>
+            </pre>
+          </div>
+
+          <p
+            style={{
+              fontSize: 13,
+              color: T.ink3,
+              marginTop: 14,
+              marginBottom: 0,
+            }}
+          >
+            Or download{" "}
+            <a
+              href={SKILL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: T.accent, textDecoration: "none", fontWeight: 600 }}
+            >
+              SKILL.md
+            </a>{" "}
+            and drop it in <code style={{ fontFamily: MONO, fontSize: 12 }}>~/.claude/skills/myjarvis-dashboard/</code>.
+          </p>
         </div>
 
         {/* Footer note */}
