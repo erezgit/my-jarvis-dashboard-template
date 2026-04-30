@@ -72,7 +72,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     throw res;
   }
 
-  let body: { title?: unknown; meeting_url?: unknown };
+  let body: { title?: unknown; meeting_url?: unknown; language?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -82,6 +82,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const meetingUrl =
     typeof body.meeting_url === "string" ? body.meeting_url.trim() : "";
+  const language =
+    typeof body.language === "string" && body.language.trim().length > 0
+      ? body.language.trim()
+      : "he";
   if (!title) return json({ error: "title is required" }, { status: 400 });
   if (!meetingUrl) {
     return json({ error: "meeting_url is required" }, { status: 400 });
@@ -128,6 +132,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         meeting_url: meetingUrl,
         title,
         meeting_id: inserted.id,
+        language,
       }),
     });
     if (!workerRes.ok) {

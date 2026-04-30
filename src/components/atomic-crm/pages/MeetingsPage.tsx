@@ -80,6 +80,7 @@ export function MeetingsPage() {
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [meetingUrl, setMeetingUrl] = useState("");
+  const [language, setLanguage] = useState("he");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -110,7 +111,11 @@ export function MeetingsPage() {
     try {
       const res = await api("/api/meetings", {
         method: "POST",
-        body: JSON.stringify({ title: title.trim(), meeting_url: meetingUrl.trim() }),
+        body: JSON.stringify({
+          title: title.trim(),
+          meeting_url: meetingUrl.trim(),
+          language,
+        }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
@@ -251,6 +256,40 @@ export function MeetingsPage() {
                 }}
                 disabled={submitting}
               />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: T.ink2 }}>
+                Language
+              </span>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                disabled={submitting}
+                style={{
+                  padding: "10px 12px",
+                  border: `1px solid ${T.line}`,
+                  borderRadius: 8,
+                  fontSize: 14,
+                  fontFamily: FONT,
+                  background: T.bg,
+                  color: T.ink,
+                  outline: "none",
+                  cursor: "pointer",
+                }}
+              >
+                <option value="he">Hebrew (עברית)</option>
+                <option value="en">English</option>
+                <option value="multi">
+                  Multi (English / Spanish / French / German / + 25 more — no Hebrew)
+                </option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+              </select>
+              <span style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.4, marginTop: 2 }}>
+                Deepgram doesn't yet code-switch Hebrew with other languages —
+                pick the dominant language for the meeting.
+              </span>
             </label>
             {submitError && (
               <div
