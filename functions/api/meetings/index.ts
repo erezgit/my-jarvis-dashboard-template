@@ -59,7 +59,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 /**
  * POST /api/meetings — create a meeting and start the Recall bot.
  * Body: { title, meeting_url }.
- * Steps: INSERT row → call Worker /recall/bot → UPDATE row with bot_id.
+ * Steps: INSERT row → call Worker /meeting/bot → UPDATE row with bot_id.
  * If the Worker call fails the row is kept in 'failed' status so the caller
  * can retry; we don't roll back the DB write because partial state is more
  * recoverable than missing state.
@@ -121,7 +121,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   let botId: string | null = null;
   try {
-    const workerRes = await fetch(`${env.MEETINGS_WORKER_URL}/recall/bot`, {
+    const workerRes = await fetch(`${env.MEETINGS_WORKER_URL}/meeting/bot`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.MEETINGS_TENANT_KEY}`,

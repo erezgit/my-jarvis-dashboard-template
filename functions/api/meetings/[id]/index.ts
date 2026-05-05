@@ -118,7 +118,7 @@ export const onRequestPost: PagesFunction<Env, "id"> = async ({ request, env, pa
   }
 
   try {
-    const workerRes = await fetch(`${env.MEETINGS_WORKER_URL}/recall/leave`, {
+    const workerRes = await fetch(`${env.MEETINGS_WORKER_URL}/meeting/leave`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.MEETINGS_TENANT_KEY}`,
