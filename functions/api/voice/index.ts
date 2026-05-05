@@ -16,6 +16,14 @@ interface Env extends AuthEnv {
   // account-scoped public URL Cloudflare auto-provisions when the bucket
   // goes public.
   VOICE_PUBLIC_URL?: string;
+  // Self-hosted TTS path. When USE_OPENAI_TTS != "1" (default), audio is
+  // synthesized by the Kokoro container behind my-jarvis-tts-worker. Worker
+  // is bearer-authed; dashboard owns the shared key as a Pages secret.
+  TTS_WORKER_URL: string;
+  TTS_WORKER_KEY: string;
+  // "1" → fall back to legacy OpenAI tts-1 for instant rollback. Anything
+  // else → use the Kokoro path. Set as a [vars] entry in wrangler.toml.
+  USE_OPENAI_TTS?: string;
 }
 
 type InsertedRow = {
@@ -31,14 +39,51 @@ type InsertedRow = {
   created_at: string;
 };
 
+// Public voice contract. Six OpenAI strings are kept for back-compat with
+// Algorithm.md and any existing MCP callers; the five Kokoro IDs let modern
+// callers address persona voices directly. Anything outside this set falls
+// back to DEFAULT_VOICE.
 const ALLOWED_VOICES = new Set([
+  // OpenAI legacy strings
   "alloy",
   "echo",
   "fable",
   "onyx",
   "nova",
   "shimmer",
+  // Kokoro persona IDs
+  "am_echo",   // Jarvis
+  "am_onyx",   // Atlas
+  "bm_fable",  // Ben
+  "af_nova",   // Nova
+  "bf_emma",   // Emma
+  "af_aoede",  // Iris
+  "af_heart",  // Top-quality female (used as default for shimmer fallback)
 ]);
+
+const DEFAULT_VOICE = "echo";
+
+// OpenAI voice → Kokoro voice ID. Persona mapping locked here so the
+// dashboard is the source of truth — callers don't have to know which
+// stack is behind the curtain. Direct Kokoro IDs pass through unchanged
+// (the lookup just returns the input if it's not in this map).
+const OPENAI_TO_KOKORO: Record<string, string> = {
+  alloy: "bf_emma",   // Emma
+  echo: "am_echo",    // Jarvis (default)
+  fable: "bm_fable",  // Ben
+  onyx: "am_onyx",    // Atlas
+  nova: "af_nova",    // Nova
+  shimmer: "af_aoede",// Iris
+};
+
+function resolveKokoroVoice(input: string): string {
+  return OPENAI_TO_KOKORO[input] ?? input;
+}
+
+// Hebrew unicode block — Kokoro v1.0 has no Hebrew model and produces
+// garbage on these inputs. Reject before the worker call so we don't burn
+// container CPU on it.
+const HEBREW_RE = /[֐-׿יִ-ﭏ]/;
 
 const MAX_TEXT_LEN = 4096;
 
@@ -71,10 +116,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return json({ error: "unauthorized" }, { status: 401 });
   }
 
-  if (!env.OPENAI_API_KEY) {
-    return json({ error: "server misconfigured: OPENAI_API_KEY missing" }, { status: 500 });
-  }
-
   // --- parse body ---
   let body: { text?: unknown; voice?: unknown; agent_name?: unknown; user_id?: unknown; title?: unknown };
   try {
@@ -92,8 +133,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
 
-  const voiceRaw = typeof body.voice === "string" ? body.voice : "echo";
-  const voice = ALLOWED_VOICES.has(voiceRaw) ? voiceRaw : "echo";
+  const voiceRaw = typeof body.voice === "string" ? body.voice : DEFAULT_VOICE;
+  const voice = ALLOWED_VOICES.has(voiceRaw) ? voiceRaw : DEFAULT_VOICE;
   const agentName =
     typeof body.agent_name === "string" && body.agent_name.trim()
       ? body.agent_name.trim().slice(0, 64)
@@ -111,26 +152,81 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!userId) return json({ error: "user_id is required" }, { status: 400 });
 
   // --- TTS ---
-  const ttsResp = await fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ model: "tts-1", voice, input: text, response_format: "mp3" }),
-  });
-  if (!ttsResp.ok) {
-    const details = await ttsResp.text().catch(() => "");
-    return json({ error: "tts failed", status: ttsResp.status, details }, { status: 502 });
+  // Two backends behind the same handler shape. Default = self-hosted Kokoro
+  // via my-jarvis-tts-worker; flag = legacy OpenAI tts-1 for instant rollback.
+  const useOpenAI = env.USE_OPENAI_TTS === "1";
+
+  let audioBuf: ArrayBuffer;
+  let audioMime: string;
+  let audioExt: string;
+  let durationSeconds: number;
+
+  if (useOpenAI) {
+    if (!env.OPENAI_API_KEY) {
+      return json(
+        { error: "server misconfigured: OPENAI_API_KEY missing" },
+        { status: 500 },
+      );
+    }
+    const ttsResp = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ model: "tts-1", voice, input: text, response_format: "mp3" }),
+    });
+    if (!ttsResp.ok) {
+      const details = await ttsResp.text().catch(() => "");
+      return json({ error: "tts failed", status: ttsResp.status, details }, { status: 502 });
+    }
+    audioBuf = await ttsResp.arrayBuffer();
+    audioMime = "audio/mpeg";
+    audioExt = "mp3";
+    // tts-1 mp3 at ~16 kbps speech ≈ 2000 bytes/sec. Rough but consistent.
+    durationSeconds = Math.max(1, Math.round(audioBuf.byteLength / 2000));
+  } else {
+    if (!env.TTS_WORKER_URL || !env.TTS_WORKER_KEY) {
+      return json(
+        { error: "server misconfigured: TTS_WORKER_URL/KEY missing" },
+        { status: 500 },
+      );
+    }
+    if (HEBREW_RE.test(text)) {
+      return json(
+        { error: "language_not_supported", detail: "Kokoro v1.0 has no Hebrew voice." },
+        { status: 422 },
+      );
+    }
+    const kokoroVoice = resolveKokoroVoice(voice);
+    const ttsResp = await fetch(`${env.TTS_WORKER_URL.replace(/\/$/, "")}/synthesize`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.TTS_WORKER_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text, voice: kokoroVoice }),
+    });
+    if (!ttsResp.ok) {
+      const details = await ttsResp.text().catch(() => "");
+      return json({ error: "tts failed", status: ttsResp.status, details }, { status: 502 });
+    }
+    audioBuf = await ttsResp.arrayBuffer();
+    audioMime = "audio/wav";
+    audioExt = "wav";
+    // Kokoro emits WAV PCM_16 mono 24 kHz → 24000 samples × 2 bytes = 48000
+    // bytes/sec. 44 bytes of RIFF header trimmed before the divide for a
+    // tighter estimate; clamped at 1s minimum.
+    const audioBytes = Math.max(0, audioBuf.byteLength - 44);
+    durationSeconds = Math.max(1, Math.round(audioBytes / 48000));
   }
-  const audioBuf = await ttsResp.arrayBuffer();
 
   // --- R2 upload ---
   const ts = Date.now();
   const rand = crypto.randomUUID().slice(0, 8);
-  const key = `voice/${userId}/${ts}-${rand}.mp3`;
+  const key = `voice/${userId}/${ts}-${rand}.${audioExt}`;
   await env.VOICE_BUCKET.put(key, audioBuf, {
-    httpMetadata: { contentType: "audio/mpeg" },
+    httpMetadata: { contentType: audioMime },
   });
 
   const publicBase = (env.VOICE_PUBLIC_URL ?? "").replace(/\/$/, "");
@@ -141,9 +237,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     );
   }
   const audioUrl = `${publicBase}/${key}`;
-
-  // rough byte->seconds for tts-1 mp3 (~16 kbps speech ~= 2000 bytes/sec)
-  const duration = Math.max(1, Math.round(audioBuf.byteLength / 2000));
+  const duration = durationSeconds;
 
   // --- Neon insert ---
   const sql = getDb(env);
