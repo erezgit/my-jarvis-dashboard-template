@@ -19,12 +19,10 @@ WORKOS_CLIENT_ID = "client_01KPRK1S863QSD94SK99FKZV0Y"
 # the R2 bucket, since Cloudflare assigns a fresh `pub-<hash>.r2.dev` per bucket.
 VOICE_PUBLIC_URL = "__VOICE_PUBLIC_URL__"
 
-# TTS gateway — self-hosted Kokoro behind a Worker + Container. Replaces
-# OpenAI tts-1 for /api/voice. Bearer auth via TTS_WORKER_KEY (Pages secret,
-# set by Provisioning Worker step-08). Same URL across all tenants.
-# Flip USE_OPENAI_TTS to "1" to fall back to the legacy OpenAI path.
+# TTS gateway — self-hosted Kokoro behind a Worker + Container.
+# Bearer auth via TTS_WORKER_KEY (Pages secret, set by Provisioning Worker
+# step-08). Same URL across all tenants.
 TTS_WORKER_URL = "https://my-jarvis-tts-worker.myjarvis.workers.dev"
-USE_OPENAI_TTS = "0"
 
 # R2 bucket binding — stores voice message audio files.
 # The Provisioning Worker creates `my-jarvis-dashboard-__TENANT__-voice` before
@@ -52,7 +50,6 @@ script_name = "my-jarvis-voice-channel"
 #   DATABASE_URL           — Neon pooled connection string (this tenant's own DB)
 #   WORKOS_CLIENT_SECRET   — WorkOS backend secret (shared across tenants)
 #   TENANT_OWNER_USER_ID   — The single WorkOS user.id allowed to use this tenant
-#   OPENAI_API_KEY         — OpenAI Bearer for TTS (legacy fallback when USE_OPENAI_TTS=1)
 #   VOICE_API_KEY          — Shared bearer the MCP Worker uses to authenticate POST /api/voice
 #   TTS_WORKER_KEY         — Shared bearer for my-jarvis-tts-worker (Kokoro gateway).
 #                            Mirror of the same secret set on that Worker. Generated via

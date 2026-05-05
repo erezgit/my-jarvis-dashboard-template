@@ -3,11 +3,10 @@ import { getDb } from "../../_lib/db";
 import { json, type Env as AuthEnv } from "../../_lib/auth";
 
 // This env interface extends the base AuthEnv (which owns DATABASE_URL +
-// WORKOS_CLIENT_ID) with the three voice-specific bindings. We don't
-// re-export it from _lib/auth because those bindings only exist on routes
-// that touch audio — keeps the base env minimal.
+// WORKOS_CLIENT_ID) with the voice-specific bindings. We don't re-export
+// it from _lib/auth because those bindings only exist on routes that
+// touch audio — keeps the base env minimal.
 interface Env extends AuthEnv {
-  OPENAI_API_KEY: string;
   VOICE_API_KEY: string;
   VOICE_BUCKET: R2Bucket;
   VOICE_CHANNEL: DurableObjectNamespace;
@@ -16,14 +15,10 @@ interface Env extends AuthEnv {
   // account-scoped public URL Cloudflare auto-provisions when the bucket
   // goes public.
   VOICE_PUBLIC_URL?: string;
-  // Self-hosted TTS path. When USE_OPENAI_TTS != "1" (default), audio is
-  // synthesized by the Kokoro container behind my-jarvis-tts-worker. Worker
-  // is bearer-authed; dashboard owns the shared key as a Pages secret.
+  // Self-hosted TTS gateway — Kokoro container behind my-jarvis-tts-worker.
+  // Worker is bearer-authed; dashboard owns the shared key as a Pages secret.
   TTS_WORKER_URL: string;
   TTS_WORKER_KEY: string;
-  // "1" → fall back to legacy OpenAI tts-1 for instant rollback. Anything
-  // else → use the Kokoro path. Set as a [vars] entry in wrangler.toml.
-  USE_OPENAI_TTS?: string;
 }
 
 type InsertedRow = {
@@ -96,8 +91,8 @@ const MAX_TEXT_LEN = 4096;
  *
  *   1. auth (VOICE_API_KEY bearer)
  *   2. parse + validate body
- *   3. OpenAI TTS -> mp3 bytes
- *   4. R2 upload at voice/{user_id}/{ts}-{uuid}.mp3
+ *   3. Kokoro TTS via my-jarvis-tts-worker → wav bytes
+ *   4. R2 upload at voice/{user_id}/{ts}-{uuid}.wav
  *   5. Neon insert into voice_samples
  *   6. notify the user's VoiceChannel DO so open WS clients fan out
  *   7. return { id, audio_url, duration_seconds }
@@ -151,75 +146,40 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const userId = typeof body.user_id === "string" ? body.user_id.trim() : "";
   if (!userId) return json({ error: "user_id is required" }, { status: 400 });
 
-  // --- TTS ---
-  // Two backends behind the same handler shape. Default = self-hosted Kokoro
-  // via my-jarvis-tts-worker; flag = legacy OpenAI tts-1 for instant rollback.
-  const useOpenAI = env.USE_OPENAI_TTS === "1";
-
-  let audioBuf: ArrayBuffer;
-  let audioMime: string;
-  let audioExt: string;
-  let durationSeconds: number;
-
-  if (useOpenAI) {
-    if (!env.OPENAI_API_KEY) {
-      return json(
-        { error: "server misconfigured: OPENAI_API_KEY missing" },
-        { status: 500 },
-      );
-    }
-    const ttsResp = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ model: "tts-1", voice, input: text, response_format: "mp3" }),
-    });
-    if (!ttsResp.ok) {
-      const details = await ttsResp.text().catch(() => "");
-      return json({ error: "tts failed", status: ttsResp.status, details }, { status: 502 });
-    }
-    audioBuf = await ttsResp.arrayBuffer();
-    audioMime = "audio/mpeg";
-    audioExt = "mp3";
-    // tts-1 mp3 at ~16 kbps speech ≈ 2000 bytes/sec. Rough but consistent.
-    durationSeconds = Math.max(1, Math.round(audioBuf.byteLength / 2000));
-  } else {
-    if (!env.TTS_WORKER_URL || !env.TTS_WORKER_KEY) {
-      return json(
-        { error: "server misconfigured: TTS_WORKER_URL/KEY missing" },
-        { status: 500 },
-      );
-    }
-    if (HEBREW_RE.test(text)) {
-      return json(
-        { error: "language_not_supported", detail: "Kokoro v1.0 has no Hebrew voice." },
-        { status: 422 },
-      );
-    }
-    const kokoroVoice = resolveKokoroVoice(voice);
-    const ttsResp = await fetch(`${env.TTS_WORKER_URL.replace(/\/$/, "")}/synthesize`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.TTS_WORKER_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ text, voice: kokoroVoice }),
-    });
-    if (!ttsResp.ok) {
-      const details = await ttsResp.text().catch(() => "");
-      return json({ error: "tts failed", status: ttsResp.status, details }, { status: 502 });
-    }
-    audioBuf = await ttsResp.arrayBuffer();
-    audioMime = "audio/wav";
-    audioExt = "wav";
-    // Kokoro emits WAV PCM_16 mono 24 kHz → 24000 samples × 2 bytes = 48000
-    // bytes/sec. 44 bytes of RIFF header trimmed before the divide for a
-    // tighter estimate; clamped at 1s minimum.
-    const audioBytes = Math.max(0, audioBuf.byteLength - 44);
-    durationSeconds = Math.max(1, Math.round(audioBytes / 48000));
+  // --- TTS — Kokoro via my-jarvis-tts-worker ---
+  if (!env.TTS_WORKER_URL || !env.TTS_WORKER_KEY) {
+    return json(
+      { error: "server misconfigured: TTS_WORKER_URL/KEY missing" },
+      { status: 500 },
+    );
   }
+  if (HEBREW_RE.test(text)) {
+    return json(
+      { error: "language_not_supported", detail: "Kokoro v1.0 has no Hebrew voice." },
+      { status: 422 },
+    );
+  }
+  const kokoroVoice = resolveKokoroVoice(voice);
+  const ttsResp = await fetch(`${env.TTS_WORKER_URL.replace(/\/$/, "")}/synthesize`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.TTS_WORKER_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ text, voice: kokoroVoice }),
+  });
+  if (!ttsResp.ok) {
+    const details = await ttsResp.text().catch(() => "");
+    return json({ error: "tts failed", status: ttsResp.status, details }, { status: 502 });
+  }
+  const audioBuf: ArrayBuffer = await ttsResp.arrayBuffer();
+  const audioMime = "audio/wav";
+  const audioExt = "wav";
+  // Kokoro emits WAV PCM_16 mono 24 kHz → 24000 samples × 2 bytes = 48000
+  // bytes/sec. 44 bytes of RIFF header trimmed before the divide for a
+  // tighter estimate; clamped at 1s minimum.
+  const audioBytes = Math.max(0, audioBuf.byteLength - 44);
+  const durationSeconds = Math.max(1, Math.round(audioBytes / 48000));
 
   // --- R2 upload ---
   const ts = Date.now();
