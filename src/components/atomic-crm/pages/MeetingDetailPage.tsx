@@ -112,12 +112,16 @@ export function MeetingDetailPage() {
     void load();
   }, [load]);
 
-  // Poll every 5s while live (matches old base cadence).
+  // Poll every 1s while live. Worker MeetingDO also polls Vexa every 1s, so
+  // worst-case end-to-end transcript lag is ~2s (1s worker + 1s dashboard)
+  // plus Whisper inference. Cost difference between 1s and 5s polling is
+  // pennies per month at our volume; the UX win (live-feeling transcripts)
+  // is large.
   useEffect(() => {
     if (!meeting || meeting.status !== "live") return;
     const handle = window.setInterval(() => {
       if (!stopRef.current) void load();
-    }, 5000);
+    }, 1000);
     return () => window.clearInterval(handle);
   }, [meeting, load]);
 
