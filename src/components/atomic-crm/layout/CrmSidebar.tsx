@@ -1,7 +1,6 @@
-import { Link, matchPath, useLocation } from "react-router-dom";
-import { LayoutDashboard, LogOut, Home, Plug, Video } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { LogOut, Settings } from "lucide-react";
 import { useAuth } from "@workos-inc/authkit-react";
-import { cn } from "@/lib/utils";
 import { getTenantIdentity } from "@/lib/tenant";
 import {
   DropdownMenu,
@@ -10,48 +9,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
-type NavItem = {
-  label: string;
-  to: string;
-  icon: typeof LayoutDashboard;
-};
-
-// Template default nav — Welcome + Install MCP + Meetings. Tenant assistants
-// append their own pages here as they build them.
-const navItems: NavItem[] = [
-  { label: "Welcome", to: "/", icon: Home },
-  { label: "Install MCP", to: "/install-mcp", icon: Plug },
-  { label: "Meetings", to: "/meetings", icon: Video },
-];
-
-function NavLink({ item }: { item: NavItem }) {
-  const location = useLocation();
-  const active =
-    item.to === "/"
-      ? location.pathname === "/"
-      : !!matchPath(item.to + "/*", location.pathname);
-
-  return (
-    <Link
-      to={item.to}
-      className={cn(
-        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-        active
-          ? "bg-accent text-foreground font-medium"
-          : "text-muted-foreground hover:bg-accent hover:text-foreground",
-      )}
-    >
-      <item.icon className="h-[18px] w-[18px]" />
-      <span>{item.label}</span>
-    </Link>
-  );
-}
+import { myjarvisLogoUrl } from "./myjarvis-logo";
+import { navItems, NavLink } from "./nav-items";
 
 export function CrmSidebar() {
   const { user, signOut } = useAuth();
-  const { displayName: tenantDisplayName, initial: tenantInitial } =
-    getTenantIdentity();
+  const navigate = useNavigate();
+  const { displayName: tenantDisplayName } = getTenantIdentity();
 
   const fullName = [user?.firstName, user?.lastName]
     .filter((v): v is string => Boolean(v))
@@ -61,19 +25,21 @@ export function CrmSidebar() {
   const initial = displayName.charAt(0).toUpperCase();
 
   return (
-    <aside className="flex h-svh w-56 shrink-0 flex-col border-r bg-sidebar">
+    <aside className="hidden h-svh w-56 shrink-0 flex-col border-r bg-sidebar md:flex">
       <div className="flex items-center gap-2 px-4 py-4">
         <Link to="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-semibold">
-            {tenantInitial}
-          </div>
+          <img
+            src={myjarvisLogoUrl}
+            alt={`${tenantDisplayName} logo`}
+            className="h-8 w-8 rounded-lg object-cover"
+          />
           <span className="text-sm font-semibold">
             {tenantDisplayName} Dashboard
           </span>
         </Link>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 px-2 overflow-y-auto">
+      <nav className="flex flex-1 flex-col gap-0.5 px-2 overflow-y-auto pt-6 pb-4">
         {navItems.map((item) => (
           <NavLink key={item.to} item={item} />
         ))}
@@ -91,6 +57,13 @@ export function CrmSidebar() {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-48">
+            <DropdownMenuItem
+              onClick={() => navigate("/settings")}
+              className="cursor-pointer"
+            >
+              <Settings className="h-4 w-4 me-2" />
+              Settings
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => signOut()}
               className="cursor-pointer"

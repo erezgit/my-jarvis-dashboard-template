@@ -1,0 +1,14 @@
+# Cloudflare Pages SPA fallback (MJOS-067).
+#
+# We migrated from HashRouter to BrowserRouter so URLs are real paths (e.g.
+# /tickets/MJOS-040) instead of cosmetic stutters (/#/tickets/MJOS-040). The
+# tradeoff: deep-link refreshes on a path the static host doesn't recognize
+# would 404 by default. This rewrite tells Pages to serve index.html for any
+# unmatched path so the SPA router can resolve it client-side.
+#
+# The 200 (not 301/302) is important — the URL stays the same, the user just
+# gets index.html for that path. Pages Functions (anything under /api/*) and
+# real static files (/assets/*, /favicon.ico, etc.) are matched BEFORE this
+# rewrite, so they continue to work normally.
+
+/*    /index.html   200

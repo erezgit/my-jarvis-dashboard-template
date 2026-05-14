@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AuthKitProvider, useAuth } from "@workos-inc/authkit-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
 import { CRM } from "./components/atomic-crm/root/CRM";
 import { VoiceChannelProvider } from "./components/voice/VoiceChannelProvider";
 import { AutoplayManager } from "./components/voice/AutoplayManager";
@@ -192,15 +192,19 @@ function AuthGate() {
     );
   }
 
+  // MJOS-067: BrowserRouter (was HashRouter). Cloudflare Pages SPA fallback
+  // handled by `public/_redirects` (`/* /index.html 200`) so deep-link refreshes
+  // resolve to the SPA shell instead of 404. Deep links work, share-links are
+  // clean (no `/#/...` cosmetic stutter), back/forward behaves natively.
   return (
     <ChunkErrorBoundary>
-      <HashRouter>
+      <BrowserRouter>
         <VoiceChannelProvider>
           <AutoplayManager />
           <VersionPollMount />
           <CRM />
         </VoiceChannelProvider>
-      </HashRouter>
+      </BrowserRouter>
     </ChunkErrorBoundary>
   );
 }

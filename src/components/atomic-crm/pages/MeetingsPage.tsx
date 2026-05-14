@@ -1,6 +1,150 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/lib/api";
+
+const WORKER_URL = "https://my-jarvis-meetings-worker.myjarvis.workers.dev";
+
+type CalendarStatus =
+  | { connected: false }
+  | { connected: true; oauth_email: string; channel_expires_at?: string };
+
+function ConnectCalendarCard({ T, FONT }: { T: Record<string, string>; FONT: string }) {
+  const api = useApi();
+  const [status, setStatus] = useState<CalendarStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await api("/api/calendar");
+      if (!res.ok) {
+        setError(`Failed (${res.status})`);
+        return;
+      }
+      const data = (await res.json()) as CalendarStatus;
+      setStatus(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
+
+  const connectUrl = `${WORKER_URL}/calendar/oauth/start?tenant=erez&return=${encodeURIComponent(window.location.href)}`;
+
+  const handleDisconnect = async () => {
+    if (!confirm("Disconnect Google Calendar? Past transcripts are kept; future meetings won't auto-record.")) return;
+    setDisconnecting(true);
+    try {
+      const res = await api("/api/calendar/disconnect", { method: "POST" });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(data.error || `Failed (${res.status})`);
+      }
+      await loadStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        padding: 20,
+        background: T.white,
+        border: `1px solid ${T.line}`,
+        borderRadius: 12,
+        marginBottom: 24,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 24,
+      }}
+    >
+      <div style={{ flex: 1 }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: "0.12em",
+            color: T.peachDark,
+            textTransform: "uppercase",
+            marginBottom: 6,
+          }}
+        >
+          Google Calendar
+        </div>
+        {status === null && !error && (
+          <div style={{ fontSize: 14, color: T.ink3 }}>Checking status…</div>
+        )}
+        {error && (
+          <div style={{ fontSize: 13.5, color: T.red }}>{error}</div>
+        )}
+        {status && status.connected && (
+          <div style={{ fontSize: 14.5, color: T.ink2 }}>
+            Connected · <strong style={{ color: T.ink }}>{status.oauth_email}</strong>
+            {status.channel_expires_at && (
+              <span style={{ fontSize: 12, color: T.ink3, marginLeft: 8 }}>
+                channel renews automatically
+              </span>
+            )}
+          </div>
+        )}
+        {status && !status.connected && (
+          <div style={{ fontSize: 14, color: T.ink2 }}>
+            Connect once. Every future meeting on your calendar gets a Jarvis bot automatically.
+          </div>
+        )}
+      </div>
+      {status && status.connected ? (
+        <button
+          type="button"
+          onClick={handleDisconnect}
+          disabled={disconnecting}
+          style={{
+            padding: "8px 16px",
+            background: T.white,
+            color: T.ink2,
+            border: `1px solid ${T.line}`,
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: FONT,
+            cursor: disconnecting ? "wait" : "pointer",
+            opacity: disconnecting ? 0.6 : 1,
+          }}
+        >
+          {disconnecting ? "Disconnecting…" : "Disconnect"}
+        </button>
+      ) : status && !status.connected ? (
+        <a
+          href={connectUrl}
+          style={{
+            padding: "10px 18px",
+            background: T.peachDark,
+            color: T.white,
+            border: `1px solid ${T.peachDark}`,
+            borderRadius: 8,
+            fontSize: 13.5,
+            fontWeight: 600,
+            fontFamily: FONT,
+            textDecoration: "none",
+            cursor: "pointer",
+            transition: "all 0.15s",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Connect Google Calendar
+        </a>
+      ) : null}
+    </div>
+  );
+}
 
 const T = {
   bg: "#FDF7F2",
@@ -62,6 +206,61 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+type Platform = "google_meet" | "zoom" | "teams";
+
+type ParsedMeeting =
+  | { ok: true; platform: Platform; nativeMeetingId: string; passcode?: string }
+  | { ok: false; error: string };
+
+// Mirrors the worker's parseVexaMeetingUrl in lib/vexa-bot.ts. Kept in sync
+// by hand because the regex set is tiny and the worker stays the security
+// boundary — this is purely a UX sanity check on paste.
+function parseMeetingUrl(raw: string): ParsedMeeting {
+  const meetingUrl = raw.trim();
+  if (meetingUrl.length === 0) return { ok: false, error: "empty" };
+  let u: URL;
+  try {
+    u = new URL(meetingUrl);
+  } catch {
+    return { ok: false, error: "Not a valid URL" };
+  }
+  const host = u.hostname.toLowerCase();
+
+  if (host === "meet.google.com" || host.endsWith(".meet.google.com")) {
+    const code = u.pathname.replace(/^\/+/, "").split("/")[0] ?? "";
+    if (!/^[a-z0-9-]+$/i.test(code) || code.length < 5) {
+      return { ok: false, error: "Doesn't look like a Meet code" };
+    }
+    return { ok: true, platform: "google_meet", nativeMeetingId: code };
+  }
+
+  if (host.endsWith("zoom.us")) {
+    const m = u.pathname.match(/\/j\/(\d+)/);
+    if (!m) return { ok: false, error: "Zoom URL needs /j/<id>" };
+    const pwd = u.searchParams.get("pwd");
+    return {
+      ok: true,
+      platform: "zoom",
+      nativeMeetingId: m[1],
+      passcode: pwd && pwd.length > 0 ? pwd : undefined,
+    };
+  }
+
+  if (host === "teams.microsoft.com" || host.endsWith(".teams.microsoft.com")) {
+    const m = u.pathname.match(/\/l\/meetup-join\/([^/]+)/);
+    if (!m) return { ok: false, error: "Teams URL needs /l/meetup-join/" };
+    return { ok: true, platform: "teams", nativeMeetingId: decodeURIComponent(m[1]) };
+  }
+
+  return { ok: false, error: "Only Google Meet, Zoom, and Teams are supported" };
+}
+
+const PLATFORM_META: Record<Platform, { label: string; dot: string }> = {
+  google_meet: { label: "Google Meet", dot: T.green },
+  zoom: { label: "Zoom", dot: T.blue },
+  teams: { label: "Microsoft Teams", dot: T.accent },
+};
+
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -80,9 +279,16 @@ export function MeetingsPage() {
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [meetingUrl, setMeetingUrl] = useState("");
+  const [passcode, setPasscode] = useState("");
   const [language, setLanguage] = useState("he");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Parse on every keystroke so the platform pill + passcode field react live.
+  // Cheap — just a regex set against the URL string.
+  const parsed = useMemo(() => parseMeetingUrl(meetingUrl), [meetingUrl]);
+  // Show the passcode input only for Zoom URLs that didn't carry pwd inline.
+  const showPasscodeField = parsed.ok && parsed.platform === "zoom" && !parsed.passcode;
 
   const loadMeetings = useCallback(async () => {
     try {
@@ -105,17 +311,24 @@ export function MeetingsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !meetingUrl.trim()) return;
+    if (!title.trim() || !parsed.ok) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
+      const body: Record<string, unknown> = {
+        title: title.trim(),
+        meeting_url: meetingUrl.trim(),
+        language,
+      };
+      // Send a typed passcode only when (a) URL didn't carry one and (b) the
+      // user actually filled the field. URL-embedded `pwd` wins on the worker
+      // side regardless, so this is purely the bare-URL case.
+      if (showPasscodeField && passcode.trim().length > 0) {
+        body.passcode = passcode.trim();
+      }
       const res = await api("/api/meetings", {
         method: "POST",
-        body: JSON.stringify({
-          title: title.trim(),
-          meeting_url: meetingUrl.trim(),
-          language,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string; detail?: string };
@@ -125,6 +338,7 @@ export function MeetingsPage() {
       }
       setTitle("");
       setMeetingUrl("");
+      setPasscode("");
       setShowForm(false);
       void loadMeetings();
     } catch (err) {
@@ -201,6 +415,8 @@ export function MeetingsPage() {
           </button>
         </div>
 
+        <ConnectCalendarCard T={T as unknown as Record<string, string>} FONT={FONT} />
+
         {showForm && (
           <form
             onSubmit={handleSubmit}
@@ -237,13 +453,13 @@ export function MeetingsPage() {
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: T.ink2 }}>
-                Google Meet URL
+                Meeting URL
               </span>
               <input
                 type="url"
                 value={meetingUrl}
                 onChange={(e) => setMeetingUrl(e.target.value)}
-                placeholder="https://meet.google.com/abc-defg-hij"
+                placeholder="Paste a Google Meet, Zoom, or Teams link"
                 style={{
                   padding: "10px 12px",
                   border: `1px solid ${T.line}`,
@@ -256,7 +472,73 @@ export function MeetingsPage() {
                 }}
                 disabled={submitting}
               />
+              {/* Platform pill — green for valid, red for unsupported,
+                  hidden when the field is empty so we don't yell at users
+                  mid-paste. */}
+              {meetingUrl.trim().length > 0 && (
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: parsed.ok ? T.ink2 : T.red,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    marginTop: 2,
+                  }}
+                >
+                  {parsed.ok ? (
+                    <>
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: PLATFORM_META[parsed.platform].dot,
+                          display: "inline-block",
+                        }}
+                      />
+                      Detected: {PLATFORM_META[parsed.platform].label}
+                      {parsed.passcode && (
+                        <span style={{ color: T.ink3 }}>
+                          · passcode embedded
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <>{parsed.error}</>
+                  )}
+                </span>
+              )}
             </label>
+            {showPasscodeField && (
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: T.ink2 }}>
+                  Zoom passcode
+                </span>
+                <input
+                  type="text"
+                  value={passcode}
+                  onChange={(e) => setPasscode(e.target.value)}
+                  placeholder="Optional — only if the host requires one"
+                  style={{
+                    padding: "10px 12px",
+                    border: `1px solid ${T.line}`,
+                    borderRadius: 8,
+                    fontSize: 14,
+                    fontFamily: MONO,
+                    background: T.bg,
+                    color: T.ink,
+                    outline: "none",
+                  }}
+                  disabled={submitting}
+                />
+                <span style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.4 }}>
+                  Most Zoom share-links carry the passcode in the URL — this
+                  field is for bare links where the host sent the passcode
+                  separately.
+                </span>
+              </label>
+            )}
             <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: T.ink2 }}>
                 Language
@@ -306,7 +588,7 @@ export function MeetingsPage() {
             )}
             <button
               type="submit"
-              disabled={submitting || !title.trim() || !meetingUrl.trim()}
+              disabled={submitting || !title.trim() || !parsed.ok}
               style={{
                 padding: "10px 18px",
                 background: T.peachDark,
@@ -317,7 +599,7 @@ export function MeetingsPage() {
                 fontWeight: 600,
                 fontFamily: FONT,
                 cursor: submitting ? "wait" : "pointer",
-                opacity: submitting || !title.trim() || !meetingUrl.trim() ? 0.6 : 1,
+                opacity: submitting || !title.trim() || !parsed.ok ? 0.6 : 1,
                 alignSelf: "flex-start",
                 marginTop: 4,
               }}
@@ -360,8 +642,9 @@ export function MeetingsPage() {
             <div style={{ fontSize: 16, fontWeight: 600, color: T.ink, marginBottom: 8 }}>
               No meetings yet.
             </div>
-            Click <em>New meeting</em>, paste a Google Meet URL, and Jarvis joins as a
-            silent recorder. The transcript lands here in real time.
+            Click <em>New meeting</em>, paste a Meet, Zoom, or Teams URL, and
+            Jarvis joins as a silent recorder. The transcript lands here in
+            real time.
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

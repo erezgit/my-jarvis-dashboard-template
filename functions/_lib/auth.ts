@@ -4,6 +4,10 @@ export interface Env {
   DATABASE_URL: string;
   WORKOS_CLIENT_ID: string;
   TENANT_WORKOS_ORG_ID: string;
+  // Used by /api/users to list Cloudflare Pages dashboard projects.
+  // Optional so other endpoints don't break when these aren't configured.
+  CLOUDFLARE_API_TOKEN?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
 }
 
 export type AuthedUser = {
