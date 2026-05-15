@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AuthKitProvider, useAuth } from "@workos-inc/authkit-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
@@ -163,6 +163,19 @@ function AuthGate() {
     );
   }
 
+  // MJOS-089 — Auto-refresh the session when the user is signed in but their
+  // token has NO org_id claim (the canonical post-provisioning state — they
+  // signed in at myjarvis.io BEFORE this tenant's WorkOS org existed, so
+  // organizationId wasn't passed and the resulting token has no org_id).
+  // Trigger signIn({organizationId}) once on mount; WorkOS reuses the active
+  // session and returns a fresh token with the correct org_id claim baked
+  // in. Zero clicks for the user. We ONLY do this when tokenOrgId === null,
+  // not for genuine wrong-org cases — those still get the explicit sign-out
+  // UX below so a different-account user doesn't get silently re-routed.
+  if (accessCheck === "denied" && tokenOrgId === null && workosOrgId) {
+    return <AutoRefreshSession workosOrgId={workosOrgId} />;
+  }
+
   if (accessCheck === "denied") {
     const userEmail = (user as { email?: string }).email ?? "your account";
     return (
@@ -206,6 +219,27 @@ function AuthGate() {
         </VoiceChannelProvider>
       </BrowserRouter>
     </ChunkErrorBoundary>
+  );
+}
+
+// MJOS-089 — One-shot auto-refresh component. Used by AuthGate when the user
+// is signed in but their token has NO org_id (post-provisioning, signed in
+// at myjarvis.io with no organizationId). Mounts, calls signIn with the
+// tenant's organizationId once, renders a Loading message while WorkOS
+// re-issues the token. We use a ref + idempotent fire so a re-render can't
+// loop signIn requests at api.workos.com.
+function AutoRefreshSession({ workosOrgId }: { workosOrgId: string }) {
+  const { signIn } = useAuth();
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    signIn({ organizationId: workosOrgId });
+  }, [signIn, workosOrgId]);
+  return (
+    <div className="flex min-h-svh items-center justify-center bg-background">
+      <div className="text-sm text-muted-foreground">Refreshing your session…</div>
+    </div>
   );
 }
 
