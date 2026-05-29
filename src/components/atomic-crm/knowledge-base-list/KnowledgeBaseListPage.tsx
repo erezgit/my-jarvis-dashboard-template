@@ -204,6 +204,23 @@ function FolderCard({
   );
 }
 
+// A top-level page with no children (a root-level leaf) renders as a clickable
+// card in the same grid, rather than a non-navigable folder card.
+function LeafCard({ node }: { node: TreeNode }) {
+  const Icon = resolveIcon(node.icon);
+  return (
+    <Link
+      to={node.to!}
+      className="rounded-xl border bg-muted/40 p-4 flex items-center gap-2.5 hover:bg-muted/60 transition-colors"
+    >
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-stone-500/15">
+        <Icon className="w-4 h-4 text-stone-600 dark:text-stone-400" />
+      </div>
+      <h2 className="text-sm font-semibold text-foreground">{node.label}</h2>
+    </Link>
+  );
+}
+
 export function KnowledgeBaseListPage() {
   const api = useApi();
   const [tree, setTree] = useState<TreeNode[]>([]);
@@ -255,16 +272,20 @@ export function KnowledgeBaseListPage() {
       {error && <p className="text-sm text-red-600">Failed to load: {error}</p>}
       {!loading && !error && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {tree.map((f) => (
-            <FolderCard
-              key={f.key}
-              folder={f}
-              isOpen={!!openFolders[f.key]}
-              onToggle={() => toggleFolder(f.key)}
-              openMap={openSubFolders}
-              setOpenMap={setOpenSubFolders}
-            />
-          ))}
+          {tree.map((f) =>
+            isFolder(f) ? (
+              <FolderCard
+                key={f.key}
+                folder={f}
+                isOpen={!!openFolders[f.key]}
+                onToggle={() => toggleFolder(f.key)}
+                openMap={openSubFolders}
+                setOpenMap={setOpenSubFolders}
+              />
+            ) : (
+              <LeafCard key={f.key} node={f} />
+            ),
+          )}
         </div>
       )}
     </div>

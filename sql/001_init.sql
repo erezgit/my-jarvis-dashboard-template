@@ -50,17 +50,28 @@ CREATE INDEX IF NOT EXISTS voice_samples_user_created_idx
   ON voice_samples (user_id, created_at DESC);
 
 -- ── page_content ───────────────────────────────────────────────────────
--- KB + knowledge-base source table. Readers: src/components/kb/* via
--- GET /api/kb/:slug and GET /api/kb. Writers: migration scripts (Ship 5)
--- and eventual inline-editing hooks. `content` is a PageContent JSONB
--- with a `title` + `sections[]` shape; each section is one of 13 typed
--- variants + an unknown fallback (see src/components/kb/types.ts).
+-- KB + knowledge-base source table. Readers: the BlockRenderer routes
+-- (KbBlueprintPage for /kb-doc/*, PitchDocBlueprintPage for /pitch-doc/*) via
+-- GET /api/kb/:slug and GET /api/kb. Writers: the MyJarvis MCP (create_kb_page
+-- / update_kb_page), migration + seed scripts, inline-editing hooks.
+--
+-- `content` MUST be the BlockRenderer recipe shape: `{ "blocks": [ ... ] }`.
+-- (The legacy `{ title, sections[] }` shape rendered by src/components/kb/* is
+-- DEAD — no live route consumes it. Authoring that shape produces a page that
+-- fails to render with "not a BlockRenderer recipe. Expected { blocks: [...] }".)
+-- The CHECK below enforces the recipe at the data layer so any writer fails
+-- loudly at write-time rather than producing a silently unrenderable page.
 CREATE TABLE IF NOT EXISTS page_content (
   id          SERIAL      PRIMARY KEY,
   page_slug   TEXT        NOT NULL UNIQUE,
   content     JSONB       NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- `content ? 'blocks'` returns a real boolean. A bare
+  -- `jsonb_typeof(content->'blocks') = 'array'` evaluates to NULL when the key
+  -- is absent, and a CHECK passes on NULL — enforcing nothing. Keep the `?`.
+  CONSTRAINT page_content_is_recipe
+    CHECK (content ? 'blocks' AND jsonb_typeof(content->'blocks') = 'array')
 );
 CREATE INDEX IF NOT EXISTS page_content_updated_idx
   ON page_content (updated_at DESC);
