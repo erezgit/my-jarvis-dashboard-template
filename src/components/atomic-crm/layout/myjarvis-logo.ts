@@ -1,2 +1,6 @@
-export const myjarvisLogoUrl =
-  "https://pub-f9d4dc80715b4656bb344d288227078e.r2.dev/assets/6ada96e8-ca90-4891-a3bb-f1c0bd77e7fe-myjarvis-logo.png";
+// The MyJarvis brand logo ships as a committed static asset under public/logos/
+// so every forked tenant is self-contained from the first build — no runtime
+// dependency on any external/cross-tenant R2 bucket, no provisioning step.
+// (Previously this pointed at a PNG on a personal R2 bucket, which coupled
+// every tenant's logo to one account's storage.)
+export const myjarvisLogoUrl = "/logos/logo_jarvis_dark.svg";
