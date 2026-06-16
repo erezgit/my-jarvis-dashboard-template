@@ -8,8 +8,6 @@
 //     in `blocks`. No DOM walking — the recipe is canonical.
 //
 // Wired into KbBlueprintPage so every /kb-doc/* page gets it for free.
-// mode="deck" (PitchDocBlueprintPage): landscape one-page-per-slide PDF +
-// pitch-deck slide markdown instead of the portrait KB variants.
 
 import { useState, type RefObject } from "react";
 import { Download, FileText, FileType2 } from "lucide-react";

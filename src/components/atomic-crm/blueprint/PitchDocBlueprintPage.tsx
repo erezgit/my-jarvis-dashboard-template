@@ -12,10 +12,6 @@
 // The result: drop a Deck-shaped recipe into page_content, link it from the
 // KB list, and it renders as a full-screen slide deck with the same data-in-DB
 // doctrine the rest of the dashboard uses. No bespoke wrapper page per deck.
-//
-// MJ-333: top-right DownloadMenu (mode="deck") — landscape PDF (one page per
-// slide) + slide markdown. The control is a sibling of the captured deckRef
-// so it never appears in the exported PDF.
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
