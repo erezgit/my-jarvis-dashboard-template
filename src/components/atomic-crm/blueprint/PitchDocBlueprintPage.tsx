@@ -12,12 +12,17 @@
 // The result: drop a Deck-shaped recipe into page_content, link it from the
 // KB list, and it renders as a full-screen slide deck with the same data-in-DB
 // doctrine the rest of the dashboard uses. No bespoke wrapper page per deck.
+//
+// MJ-333: top-right DownloadMenu (mode="deck") — landscape PDF (one page per
+// slide) + slide markdown. The control is a sibling of the captured deckRef
+// so it never appears in the exported PDF.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ChevronLeft } from "lucide-react";
 import { BlockRenderer, type Block } from "./BlockRenderer";
 import { pitchDeckConfig } from "./PitchDeckBlocks";
+import { DownloadMenu } from "./DownloadMenu";
 import { useApi } from "../../../lib/api";
 
 export const PitchDocBlueprintPage = () => {
@@ -28,6 +33,11 @@ export const PitchDocBlueprintPage = () => {
 
   const [blocks, setBlocks] = useState<Block[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The deck container is the PDF capture target. The download control is kept
+  // OUTSIDE this ref so it never ends up in the exported PDF.
+  const deckRef = useRef<HTMLDivElement>(null);
+  // Last path segment, used as the download filename stem.
+  const filename = tail.split("/").pop() || "pitch-deck";
 
   useEffect(() => {
     if (!slug) return;
@@ -89,7 +99,18 @@ export const PitchDocBlueprintPage = () => {
 
   return (
     <div className="absolute inset-0 overflow-hidden">
-      <BlockRenderer config={pitchDeckConfig} blocks={blocks} />
+      <div ref={deckRef} className="absolute inset-0">
+        <BlockRenderer config={pitchDeckConfig} blocks={blocks} />
+      </div>
+      {/* Floating download control — sibling of the deck (not captured). */}
+      <div className="absolute right-4 top-4 z-30">
+        <DownloadMenu
+          pageRef={deckRef}
+          blocks={blocks}
+          filename={filename}
+          mode="deck"
+        />
+      </div>
     </div>
   );
 };
