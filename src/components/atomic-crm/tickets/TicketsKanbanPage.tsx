@@ -63,8 +63,6 @@ type TicketRow = {
   updated_at: string;
 };
 
-// 5-second poll cadence — fast enough to feel live, slow enough to be free.
-const REFRESH_MS = 5_000;
 
 const COLUMN_ORDER: Status[] = [
   "todo",
@@ -511,11 +509,9 @@ export function TicketsKanbanPage() {
     }
 
     void fetchOnce();
-    const intervalId = window.setInterval(fetchOnce, REFRESH_MS);
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -658,8 +654,7 @@ export function TicketsKanbanPage() {
               maxWidth: 640,
             }}
           >
-            Drag a card between columns to change status. Auto-refreshes every{" "}
-            {Math.round(REFRESH_MS / 1000)}s.
+            Drag a card between columns to change status.
           </p>
         </div>
 
