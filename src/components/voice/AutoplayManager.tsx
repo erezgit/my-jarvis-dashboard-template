@@ -17,6 +17,12 @@ export function AutoplayManager() {
     const unsub = onSampleArrived((sample) => {
       if (!autoplayEnabled) return;
       if (!sample.audio_url) return;
+      // Don't hijack a message the user is actively listening to. If something
+      // is already playing, the new arrival just lands on top of the feed with
+      // its green "ready" button (VoicePlayerInline's isNew state) — the user
+      // clicks it when they're ready. Autoplay only fires into silence (nothing
+      // playing, or the previous message finished).
+      if (audioManager.isPlaying()) return;
       audioManager.play(sample.audio_url);
     });
     return unsub;

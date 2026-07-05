@@ -7,7 +7,7 @@
 // `/skills/:slug` is registered in Layout's SKY_BLUE_ROUTES so <main> is
 // painted sky-blue at the layout level.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import { useApi } from "@/lib/api";
@@ -16,6 +16,7 @@ import {
   architectureT as T,
 } from "../blueprint/ArchitectureBlocks";
 import { BlockRenderer, type Block } from "../blueprint/BlockRenderer";
+import { DownloadMenu } from "../blueprint/DownloadMenu";
 
 type Skill = {
   id: string;
@@ -97,6 +98,9 @@ export function SkillDetailPage() {
   const api = useApi();
   const [skill, setSkill] = useState<Skill | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Wraps the printable content (Hero + rendered blocks) so DownloadMenu can
+  // rasterize it to PDF — same pattern as KbBlueprintPage.
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,7 +130,10 @@ export function SkillDetailPage() {
       padding: "40px 48px 80px",
     }}>
       <div style={{ maxWidth: 1000, margin: "0 auto" }}>
-        <div style={{ marginBottom: 24 }}>
+        <div style={{
+          marginBottom: 24, display: "flex",
+          justifyContent: "space-between", alignItems: "center", gap: 12,
+        }}>
           <Link
             to="/skills"
             style={{
@@ -136,6 +143,9 @@ export function SkillDetailPage() {
           >
             <ChevronLeft style={{ width: 14, height: 14 }} /> Skills
           </Link>
+          {skill && recipe ? (
+            <DownloadMenu pageRef={contentRef} blocks={recipe} filename={skill.slug} />
+          ) : null}
         </div>
 
         {error ? (
@@ -155,23 +165,25 @@ export function SkillDetailPage() {
           </div>
         ) : (
           <>
-            <Hero
-              eyebrow={`SKILL · ${skill.slug}`}
-              subEyebrow={`${skill.status.toUpperCase()} · UPDATED ${new Date(skill.updated_at).toLocaleDateString()}`}
-              title={skill.name}
-              lede={skill.description ?? ""}
-            />
+            <div ref={contentRef}>
+              <Hero
+                eyebrow={`SKILL · ${skill.slug}`}
+                subEyebrow={`${skill.status.toUpperCase()} · UPDATED ${new Date(skill.updated_at).toLocaleDateString()}`}
+                title={skill.name}
+                lede={skill.description ?? ""}
+              />
 
-            {recipe ? (
-              <BlockRenderer config={architectureConfig} blocks={recipe} />
-            ) : (
-              <div style={{
-                padding: "16px 20px", color: T.red, background: T.redSoft,
-                border: `1px solid ${T.red}`, borderRadius: 8, fontSize: 13,
-              }}>
-                Skill body is not a valid BlockRenderer recipe (expected JSON {"{ blocks: [...] }"}).
-              </div>
-            )}
+              {recipe ? (
+                <BlockRenderer config={architectureConfig} blocks={recipe} />
+              ) : (
+                <div style={{
+                  padding: "16px 20px", color: T.red, background: T.redSoft,
+                  border: `1px solid ${T.red}`, borderRadius: 8, fontSize: 13,
+                }}>
+                  Skill body is not a valid BlockRenderer recipe (expected JSON {"{ blocks: [...] }"}).
+                </div>
+              )}
+            </div>
 
             <div style={{
               fontSize: 11, color: T.ink3, paddingTop: 24,
